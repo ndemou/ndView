@@ -27,6 +27,9 @@ class Canvas(QWidget):
 
         # for auto zoom ratio
         self.target_zoom_width = 0
+        
+        # the undo buffer
+        self.undo_buf = []
 
         self.show_image(init=True)
 
@@ -114,6 +117,32 @@ class Canvas(QWidget):
         elif event.key() == QtCore.Qt.Key_R:
             for qview in self.qviews:
                 qview.set_zoom(1)
+        elif event.key() == QtCore.Qt.Key_Z:
+            if modifiers == QtCore.Qt.ControlModifier:
+                if self.undo_buf:
+                    (full_path, img_pidx) = self.undo_buf.pop()
+                    print(f"Restoring {full_path} at pidx {img_pidx}")
+                    os.rename(full_path+".bak", full_path)
+                    self.db.pidx = img_pidx
+                    self.show_image()
+                else:
+                    print('Nothing to undo')
+        elif event.key() == QtCore.Qt.Key_Delete:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            # Check if file exists and delete it
+            if os.path.exists(full_path):
+                os.rename(full_path, full_path+'.bak')
+                print(f"File deleted(.bak): {full_path} at pidx {pidx_before_moving}")
+                self.undo_buf.append((full_path, pidx_before_moving))
+        elif event.key() == QtCore.Qt.Key_Backspace:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(-1)
+            # Check if file exists and delete it
+            if os.path.exists(full_path):
+                os.rename(full_path, full_path+'.bak')
+                print(f"File deleted(.bak): {full_path} at pidx {pidx_before_moving}")
+                self.undo_buf.append((full_path, pidx_before_moving))
         elif event.key() == QtCore.Qt.Key_C:
             if modifiers == QtCore.Qt.ControlModifier:
                 # copy image to clipboard
@@ -154,31 +183,19 @@ class Canvas(QWidget):
                 self.dir_browse(-10)
             else:
                 self.dir_browse(-1)
+        elif event.key() == QtCore.Qt.Key_End:
+            self.dir_browse( 99999)
+        elif event.key() == QtCore.Qt.Key_Home:
+            self.dir_browse(-99999)
 
         elif event.key() == QtCore.Qt.Key_Up:
-            if modifiers == QtCore.Qt.ShiftModifier:  # quickly zoom in all qviews
-                for qview in self.qviews:
-                    qview.zoom_in(scale=1.2)
-            elif modifiers == (QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier):
-                # only modify the zoom ration for the current view
-                for qview in self.qviews:
-                    if qview.hasFocus():
-                        qview.zoom_in(scale=1.05, emit_signal=False)
-            else:
-                for qview in self.qviews:
-                    qview.zoom_in(scale=1.05)
+            # quickly zoom in all qviews
+            for qview in self.qviews:
+                qview.zoom_in(scale=1.2)
         elif event.key() == QtCore.Qt.Key_Down:
-            if modifiers == QtCore.Qt.ShiftModifier:  # quickly zoom out all qviews
-                for qview in self.qviews:
-                    qview.zoom_out(scale=1.2)
-            elif modifiers == (QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier):
-                # only modify the zoom ration for the current view
-                for qview in self.qviews:
-                    if qview.hasFocus():
-                        qview.zoom_out(scale=1.05, emit_signal=False)
-            else:
-                for qview in self.qviews:
-                    qview.zoom_out(scale=1.05)
+            # quickly zoom out all qviews
+            for qview in self.qviews:
+                qview.zoom_out(scale=1.2)
 
         elif event.key() == QtCore.Qt.Key_F11:
             self.parent.switch_fullscreen()
@@ -239,23 +256,6 @@ class Canvas(QWidget):
                     md5, phash = self.db.get_fingerprint(fidx=fidx)
                     md5_0, phash_0 = self.db.get_fingerprint(fidx=self.db.fidx)
 
-            qimg = QImage(img_path)
-            self.img_path = img_path
-            if idx == 0:
-                # for HVView, HVScene show_mouse_color.
-                # only work on the first qimg (main canvas mode)
-                self.qimg = qimg
-                # show image path in the statusbar
-                self.parent.set_statusbar(f'{img_path}')
-
-            # --------------- auto zoom scale ratio -------------------
-            if self.target_zoom_width > 0:
-                qview.set_zoom(self.target_zoom_width / qimg.width())
-            # --------------- end of auto zoom scale ratio -------------------
-
-            # shown text
-            # basename = os.path.basename(img_path)
-
             def get_parent_dir(path, levels=1):
                 common = path
                 for _ in range(levels + 1):
@@ -263,28 +263,32 @@ class Canvas(QWidget):
                 return os.path.relpath(path, common)
 
             shown_path = get_parent_dir(img_path, 2).replace('\\', '/')
-
+            head, tail = os.path.split(shown_path)
             if interval_mode:
                 shown_idx = self.db.pidx + 1 + idx
             else:
                 shown_idx = self.db.pidx + 1
 
-            # TODO: add zoom ratio
-            head, tail = os.path.split(shown_path)
-            shown_text = [
-                f'[{shown_idx:d} / {self.db.get_path_len():d}] {tail}', head, f'{height:d} x {width:d}, {file_size}',
-                f'{color_type}'
-            ]
+            
+            qimg = QImage(img_path)
+            self.img_path = img_path
+            if idx == 0:
+                # for HVView, HVScene show_mouse_color.
+                # only work on the first qimg (main canvas mode)
+                self.qimg = qimg
+                # self.parent.changeTabCaption(f'{img_path}')
+                self.parent.changeTabCaption(f'[{shown_idx:d} / {self.db.get_path_len():d}] {tail}')
+                
+
+            # --------------- auto zoom scale ratio -------------------
+            if self.target_zoom_width > 0:
+                qview.set_zoom(self.target_zoom_width / qimg.width())
+            # --------------- end of auto zoom scale ratio -------------------
+
+            shown_text = []
             # show fingerprint
             if self.show_fingerprint:
-                if idx > 0:
-                    md5_diff = (md5 == md5_0)
-                    phash_diff = phash - phash_0
-                    shown_text.append(f'md5: {md5_diff} - {md5}')
-                    shown_text.append(f'phash: {phash_diff} - {phash}')
-                else:
-                    shown_text.append(f'md5: {md5}')
-                    shown_text.append(f'phash: {phash}')
+                shown_text.append(f'phash,md5: {phash}, {md5}')
 
             if qview.hasFocus():
                 color = 'red'
@@ -340,8 +344,9 @@ class Canvas(QWidget):
             qview.set_transform()
 
     def dir_browse(self, step):
-        self.db.path_browse(step)
+        pidx_before_moving = self.db.path_browse(step)
         self.show_image()
+        return pidx_before_moving
 
     def toggle_bg_color(self):
         if self.qview_bg_color == 'white':
