@@ -96,12 +96,32 @@ class HVDB():
                 f.write(f'{line}\n')
 
     def path_browse(self, step):
+        pidx_before_moving = self._pidx # store to return it
+        if ((self._pidx + step<0) or (self._pidx + step>(self.get_path_len() - 1))):
+            # ndemou: I added this code to stick to the 
+            # first/last file instead of wrapping arround
+            if step<0:
+                self._pidx = 0
+            else:
+                self._pidx = (self.get_path_len() - 1)
+            return pidx_before_moving
+        # does the file we are viewing now (before we move) exist?
+        cur_file_exists = os.path.exists(self.get_path(self._fidx, self._pidx)[0])
         if self.get_path_len() > 1:
             self._pidx += step * (self._interval + 1)
             if self._pidx > (self.get_path_len() - 1):
                 self._pidx = 0
             elif self._pidx < 0:
-                self._pidx = self.get_path_len() - 1
+                self._pidx = (self.get_path_len() - 1)
+            path = self.get_path(self._fidx, self._pidx)[0]
+        # does the file we reached after the move exist?
+        new_file_exists = os.path.exists(self.get_path(self._fidx, self._pidx)[0])
+        if not(new_file_exists) and not(cur_file_exists) and step in (-1,1):
+            # user is moving within delete files
+            if ((self._pidx>0 and step<1) or (self._pidx<(self.get_path_len() - 1) and step>-1)): 
+                print("Skiping deleted files")
+                self.path_browse(1 if step>0 else -1)
+        return pidx_before_moving
 
     def folder_browse(self, step):
         if self.get_folder_len() > 1:
@@ -181,7 +201,10 @@ class HVDB():
             with Image.open(path) as lazy_img:
                 width, height = lazy_img.size
         except FileNotFoundError:
-            show_msg('Critical', 'Critical', f'Cannot open {path}')
+            path = os.path.join(ROOT_DIR, 'icon.ico')
+            with Image.open(path) as lazy_img:
+                width, height = lazy_img.size
+            # show_msg('Critical', 'Critical', f'Cannot open {path}')
         return width, height
 
     def get_color_type(self, fidx=None, pidx=None):
@@ -190,7 +213,10 @@ class HVDB():
             with Image.open(path) as lazy_img:
                 color_type = lazy_img.mode
         except FileNotFoundError:
-            show_msg('Critical', 'Critical', f'Cannot open {path}')
+            path = os.path.join(ROOT_DIR, 'icon.ico')
+            with Image.open(path) as lazy_img:
+                color_type = lazy_img.mode
+            # show_msg('Critical', 'Critical', f'Cannot open {path}')
         return color_type
 
     def get_file_size(self, fidx=None, pidx=None):
