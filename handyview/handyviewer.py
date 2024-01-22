@@ -7,8 +7,8 @@ from PyQt5.QtWidgets import (QApplication, QDockWidget, QFileDialog, QGridLayout
 
 import handyview.actions as actions
 from handyview.canvas import Canvas
-from handyview.canvas_crop import CanvasCrop
-from handyview.canvas_video import CanvasVideo
+# from handyview.canvas_crop import CanvasCrop
+# from handyview.canvas_video import CanvasVideo
 from handyview.db import HVDB
 from handyview.utils import ROOT_DIR
 from handyview.widgets import HLine, MessageDialog, show_msg
@@ -44,34 +44,27 @@ class CenterWidget(QWidget):
         self.tabs.setFocusPolicy(QtCore.Qt.NoFocus)
 
         self.canvas = Canvas(self, hvdb)
-        self.canvas_crop = CanvasCrop(self, hvdb)
-        self.canvas_video = CanvasVideo(self)
-        self.tabs.addTab(self.canvas, 'View 图像')
-        self.tabs.addTab(self.canvas_crop, 'Crop 裁剪')
-        self.tabs.addTab(self.canvas_video, 'Video 视频')
-        self.tabs.setTabIcon(0, QIcon(os.path.join(ROOT_DIR, 'icons/image.png')))
-        self.tabs.setTabIcon(1, QIcon(os.path.join(ROOT_DIR, 'icons/crop.png')))
-        self.tabs.setTabIcon(2, QIcon(os.path.join(ROOT_DIR, 'icons/video.png')))
+        self.tabs.addTab(self.canvas, 'View')
         font = self.tabs.font()
-        font.setPointSize(13)
-        # font.setBold(True)
+        font.setPointSize(12)
         self.tabs.setFont(font)
 
         layout.addWidget(self.tabs)
 
         self.tabs.currentChanged.connect(self.tabsCurrentChanged)
 
+    def changeTabCaption(self, caption):
+        self.tabs.setTabText(0, caption)
+        
     def tabsCurrentChanged(self, index):
         if index == 2:
             self.parent.dock_info.hide()
         else:
-            self.parent.dock_info.show()
+            self.parent.dock_info.hide()
 
     def switch_fullscreen(self):
         self.parent.switch_fullscreen()
-
-    def set_statusbar(self, text):
-        self.parent.set_statusbar(text)
+        self.parent.dock_info.hide()
 
 
 class MainWindow(QMainWindow):
@@ -98,64 +91,17 @@ class MainWindow(QMainWindow):
         # initialize UI
         # read version from file
         with open(os.path.join(ROOT_DIR, 'VERSION')) as f:
-            title = 'HandyView @ V' + f.readline().strip()
+            title = 'ndView V' + f.readline().strip() + ' (based on github.com/xinntao/HandyView)'
         self.setWindowTitle(title)
-        self.init_menubar()
+        # self.init_menubar()
         self.init_toolbar()
-        # self.init_statusbar()
         self.init_central_window()
         self.add_dock_window()
 
-    def init_menubar(self):
-        # create menubar
-        menubar = self.menuBar()
-
-        # File
-        file_menu = menubar.addMenu('&File(文件)')
-        file_menu.addAction(actions.open(self))
-        file_menu.addAction(actions.history(self))
-        file_menu.addSeparator()
-        file_menu.addAction(actions.refresh(self))
-        file_menu.addAction(actions.goto_index(self))
-        file_menu.addSeparator()
-        file_menu.addAction(actions.include_file_name(self))
-        file_menu.addAction(actions.exclude_file_name(self))
-
-        # Edit
-        # edit_menu = menubar.addMenu('&Edit(编辑)')  # noqa: F841
-
-        # Draw
-        # draw_menu = menubar.addMenu('&Draw(画图)')  # noqa: F841
-
-        # Compare
-        compare_menu = menubar.addMenu('&Compare(比较)')
-        compare_menu.addAction(actions.compare(self))
-        compare_menu.addAction(actions.clear_compare(self))
-        compare_menu.addAction(actions.set_fingerprint(self))
-
-        # Layouts
-        layout_menu = menubar.addMenu('&Layout(布局)')
-        layout_menu.addAction(actions.switch_main_canvas(self))
-        layout_menu.addAction(actions.switch_compare_canvas(self))
-        layout_menu.addAction(actions.switch_preview_canvas(self))
-
-        # Tabs
-        layout_menu = menubar.addMenu('&Tabs(选项卡)')
-        layout_menu.addAction(actions.select_basic_tab(self))
-        layout_menu.addAction(actions.select_crop_tab(self))
-        layout_menu.addAction(actions.select_video_tab(self))
-
-        # View
-        layout_menu = menubar.addMenu('&View(查看)')
-        layout_menu.addAction(actions.auto_zoom_dialog(self))
-
-        # Help
-        help_menu = menubar.addMenu('&Help(帮助)')
-        help_menu.addAction(actions.show_instruction_msg(self))
 
     def init_toolbar(self):
         self.toolbar = QToolBar('ToolBar', self)
-        self.toolbar.setToolButtonStyle(QtCore.Qt.ToolButtonTextUnderIcon)
+        self.toolbar.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
 
         # open and history
         self.toolbar.addAction(actions.open(self))
@@ -169,16 +115,6 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(actions.include_file_name(self))
         self.toolbar.addAction(actions.exclude_file_name(self))
         self.toolbar.addSeparator()
-        # compare and clear compare
-        self.toolbar.addAction(actions.compare(self))
-        self.toolbar.addAction(actions.clear_compare(self))
-
-        # canvas layout
-        self.toolbar.addSeparator()
-        self.toolbar.addSeparator()
-        self.toolbar.addAction(actions.switch_main_canvas(self))
-        self.toolbar.addAction(actions.switch_compare_canvas(self))
-        self.toolbar.addAction(actions.switch_preview_canvas(self))
 
         # others
         self.toolbar.addSeparator()
@@ -192,14 +128,8 @@ class MainWindow(QMainWindow):
         # auto zoom
         self.toolbar.addAction(actions.auto_zoom(self))
 
-        self.toolbar.setIconSize(QtCore.QSize(45, 45))
+        self.toolbar.setIconSize(QtCore.QSize(22, 22))
         self.addToolBar(QtCore.Qt.LeftToolBarArea, self.toolbar)
-
-    def init_statusbar(self):
-        self.statusBar().showMessage('Welcome to HandyView.')
-
-    def set_statusbar(self, text):
-        self.statusBar().showMessage(text)
 
     def init_central_window(self):
         self.setCentralWidget(self.center_canvas)
@@ -248,6 +178,7 @@ class MainWindow(QMainWindow):
         dockedWidget.setLayout(layout)
 
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_info)
+        self.dock_info.hide()
 
     # ---------------------------------------
     # slots: open and history
@@ -258,7 +189,8 @@ class MainWindow(QMainWindow):
             self.switch_main_canvas()
 
         if self.center_canvas.tabs.currentIndex() == 2:  # video
-            self.center_canvas.canvas_video.open_files()
+            # self.center_canvas.canvas_video.open_files()
+            pass
         else:
             try:
                 with open(os.path.join(ROOT_DIR, 'history.txt'), 'r') as f:
@@ -271,7 +203,7 @@ class MainWindow(QMainWindow):
                 self.hvdb.init_path = key
                 self.hvdb.get_init_path_list()
                 self.center_canvas.canvas.show_image(init=True)
-                self.center_canvas.canvas_crop.update_db(self.hvdb)
+                # self.center_canvas.canvas_crop.update_db(self.hvdb)
         self.empty = False
 
     def open_history(self):
@@ -283,7 +215,7 @@ class MainWindow(QMainWindow):
             self.hvdb.init_path = key
             self.hvdb.get_init_path_list()
             self.center_canvas.canvas.show_image(init=True)
-            self.center_canvas.canvas_crop.update_db(self.hvdb)
+            # self.center_canvas.canvas_crop.update_db(self.hvdb)
         self.empty = False
 
     # ---------------------------------------
@@ -486,7 +418,5 @@ if __name__ == '__main__':
 
     app = Application(sys.argv)
     app.window_list.append(create_new_window())
-    # change status bar info
-    # mainwindow.set_statusbar(f'Screen: {screen.name()} with size {size.width()} x {size.height()}.')
 
     sys.exit(app.exec_())
