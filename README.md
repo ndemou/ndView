@@ -3,13 +3,13 @@ A fast image viewer that has helped me when cleaning up images.
 USAGE
 -----
 
-Click the open folder icon, select the first screenshot and then use these keys:
+Click the open folder icon, select the first image and then use these keys:
 
-LEFT/RIGHT view previous/next screenshot
+LEFT/RIGHT view previous/next image
 
-BACKSPACE/DELETE delete* current then move to previous/next screenshot
+BACKSPACE/DELETE delete* current then move to previous/next image
 
 Ctrl-Z undo last delete
  
  
-*: In fact screenshots are never deleted but are just renamed to *.bak
+*: In fact images are never deleted but are just renamed to *.bak
