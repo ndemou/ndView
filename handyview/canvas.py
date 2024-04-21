@@ -6,7 +6,48 @@ from PyQt5.QtWidgets import QApplication, QGridLayout, QSplitter, QWidget
 from handyview.view_scene import HVScene, HVView
 from handyview.widgets import ColorLabel, HVLable, show_msg
 
+def ensure_child_dir_exists(parent_dir, child_dir):
+    # creates parent_dir/child_dir if it doesn't exist
+    #
+    dir_path = os.path.join(parent_dir, child_dir)    
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
 
+def insert_last_dir(original_path, subdir_name):
+    # I have a path to a jpg like this 
+    # 
+    #   C:\sample\path\some.jpg
+    # 
+    # this function will add a subdir before some.jpg like this
+    # 
+    #   C:\sample\path\foo\some.jpg
+    #
+    dir_path, filename = os.path.split(original_path)
+    new_path = os.path.join(dir_path, subdir_name, filename)
+    return new_path
+
+def remove_last_dir(path):
+    # if path is 
+    # 
+    #   C:\sample\path\foo\some.jpg
+    # 
+    # It will return
+    # 
+    #   C:\sample\path\some.jpg
+    #
+    path_parts = path.split(os.sep)
+    path_parts.pop(-2)
+    new_path = os.path.join(*path_parts)
+    return new_path
+
+def move_image_to_subdir(subdir, full_path, pidx_before_moving, undo_buf):
+    # moves an image to a subdir (e.g. '_deleted')
+    if os.path.exists(full_path):
+        ensure_child_dir_exists(os.path.dirname(full_path), subdir)
+        os.rename(full_path, insert_last_dir(full_path, subdir))
+        print(f"File moved to deleted: {full_path} at pidx {pidx_before_moving}")
+        undo_buf.append((full_path, pidx_before_moving, subdir))
+    
 class Canvas(QWidget):
     """Main canvas"""
 
@@ -114,55 +155,40 @@ class Canvas(QWidget):
         modifiers = QApplication.keyboardModifiers()
         if event.key() == QtCore.Qt.Key_F9:
             self.toggle_bg_color()
-        elif event.key() == QtCore.Qt.Key_R:
-            for qview in self.qviews:
-                qview.set_zoom(1)
-        elif event.key() == QtCore.Qt.Key_Z:
-            if modifiers == QtCore.Qt.ControlModifier:
-                if self.undo_buf:
-                    (full_path, img_pidx) = self.undo_buf.pop()
-                    print(f"Restoring {full_path} at pidx {img_pidx}")
-                    os.rename(full_path+".bak", full_path)
-                    self.db.pidx = img_pidx
-                    self.show_image()
-                else:
-                    print('Nothing to undo')
+        elif event.key() == QtCore.Qt.Key_Z and modifiers == QtCore.Qt.ControlModifier:
+            if self.undo_buf:
+                (full_path, img_pidx, subdir) = self.undo_buf.pop()
+                print(f"Restoring {full_path} at pidx {img_pidx}")
+                os.rename(insert_last_dir(full_path, subdir), full_path)
+                self.db.pidx = img_pidx
+                self.show_image()
+            else:
+                print('Nothing to undo')
         elif event.key() == QtCore.Qt.Key_Delete:
             full_path = os.path.abspath(self.img_path)
             pidx_before_moving = self.dir_browse(1)
-            # Check if file exists and delete it
-            if os.path.exists(full_path):
-                os.rename(full_path, full_path+'.bak')
-                print(f"File deleted(.bak): {full_path} at pidx {pidx_before_moving}")
-                self.undo_buf.append((full_path, pidx_before_moving))
+            move_image_to_subdir('_deleted', full_path, pidx_before_moving, self.undo_buf)
         elif event.key() == QtCore.Qt.Key_Backspace:
             full_path = os.path.abspath(self.img_path)
             pidx_before_moving = self.dir_browse(-1)
-            # Check if file exists and delete it
-            if os.path.exists(full_path):
-                os.rename(full_path, full_path+'.bak')
-                print(f"File deleted(.bak): {full_path} at pidx {pidx_before_moving}")
-                self.undo_buf.append((full_path, pidx_before_moving))
-        elif event.key() == QtCore.Qt.Key_C:
-            if modifiers == QtCore.Qt.ControlModifier:
+            move_image_to_subdir('_deleted', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_C and modifiers == QtCore.Qt.ControlModifier:
                 # copy image to clipboard
                 clipboard = QApplication.clipboard()
                 mime_data = QtCore.QMimeData()
                 full_path = os.path.abspath(self.img_path)
                 mime_data.setUrls([QtCore.QUrl(f'file:///{full_path}')])
                 clipboard.setMimeData(mime_data)
-            else:
-                self.compare_folders(1)
         elif event.key() == QtCore.Qt.Key_V:
             self.compare_folders(-1)
 
-        elif event.key() == QtCore.Qt.Key_Z:
-            if modifiers == QtCore.Qt.ControlModifier:
-                # cancel auto zoom
-                self.target_zoom_width = 0
-            else:
-                self.auto_zoom()
-
+        elif event.key() == QtCore.Qt.Key_F1: 
+            for qview in self.qviews:
+                qview.set_zoom(1)
+        elif event.key() == QtCore.Qt.Key_F2:
+            self.auto_zoom()
+        elif event.key() == QtCore.Qt.Key_F3:
+            self.target_zoom_width = 0 # cancel auto zoom
         elif event.key() == QtCore.Qt.Key_Space:
             if modifiers == QtCore.Qt.ShiftModifier:
                 self.dir_browse(10)
@@ -187,7 +213,6 @@ class Canvas(QWidget):
             self.dir_browse( 99999)
         elif event.key() == QtCore.Qt.Key_Home:
             self.dir_browse(-99999)
-
         elif event.key() == QtCore.Qt.Key_Up:
             # quickly zoom in all qviews
             for qview in self.qviews:
@@ -196,9 +221,112 @@ class Canvas(QWidget):
             # quickly zoom out all qviews
             for qview in self.qviews:
                 qview.zoom_out(scale=1.2)
-
         elif event.key() == QtCore.Qt.Key_F11:
             self.parent.switch_fullscreen()
+        elif event.key() == QtCore.Qt.Key_A:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_A', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_B:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_B', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_C:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_C', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_D:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_D', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_E:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_E', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_F:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_F', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_G:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_G', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_H:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_H', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_I:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_I', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_J:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_J', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_K:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_K', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_L:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_L', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_M:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_M', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_N:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_N', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_O:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_O', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_P:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_P', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_Q:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_Q', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_R:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_R', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_S:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_S', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_T:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_T', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_U:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_U', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_V:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_V', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_W:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_W', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_X:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_X', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_Y:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_Y', full_path, pidx_before_moving, self.undo_buf)
+        elif event.key() == QtCore.Qt.Key_Z:
+            full_path = os.path.abspath(self.img_path)
+            pidx_before_moving = self.dir_browse(1)
+            move_image_to_subdir('_Z', full_path, pidx_before_moving, self.undo_buf)
 
     def goto_index(self, index):
         self.db.pidx = index
